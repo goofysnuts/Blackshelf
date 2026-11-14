@@ -98,16 +98,17 @@ struct MiniPlayerAccessory: View {
 
   var body: some View {
     if let item = player.item {
-      HStack(spacing: 10) {
-        BookCover(item: item, cornerRadius: 5, width: 160)
-          .frame(width: 30, height: 30)
-        VStack(alignment: .leading, spacing: 0) {
+      HStack(spacing: 12) {
+        // Cover nutzt fast die ganze Höhe der Leiste
+        BookCover(item: item, cornerRadius: 9, width: 200)
+          .frame(width: compact ? 30 : 40, height: compact ? 30 : 40)
+        VStack(alignment: .leading, spacing: 1) {
           Text(item.title)
-            .font(.subheadline.weight(.semibold))
+            .font(.callout.weight(.semibold))
             .lineLimit(1)
           if !compact {
             Text(player.currentChapter?.title.nilIfEmpty ?? item.author)
-              .font(.caption)
+              .font(.footnote)
               .foregroundStyle(.secondary)
               .lineLimit(1)
           }
@@ -121,11 +122,11 @@ struct MiniPlayerAccessory: View {
               ProgressView()
             } else {
               Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                .font(.title3)
+                .font(.system(size: 22, weight: .semibold))
                 .contentTransition(.symbolEffect(.replace))
             }
           }
-          .frame(width: 36, height: 36)
+          .frame(width: 44, height: 44)
           .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -135,16 +136,16 @@ struct MiniPlayerAccessory: View {
             player.skipForward()
           } label: {
             Image(systemName: "goforward.\(Int(player.skipForwardInterval))")
-              .font(.title3)
-              .frame(width: 36, height: 36)
+              .font(.system(size: 22, weight: .semibold))
+              .frame(width: 44, height: 44)
               .contentShape(Rectangle())
           }
           .buttonStyle(.plain)
           .accessibilityLabel("\(Int(player.skipForwardInterval)) Sekunden vor")
         }
       }
-      .padding(.leading, 6)
-      .padding(.trailing, 10)
+      .padding(.leading, 14)
+      .padding(.trailing, 8)
       .contentShape(Rectangle())
       .onTapGesture { player.isPresented = true }
       .accessibilityAction(named: "Player öffnen") { player.isPresented = true }
