@@ -9,8 +9,10 @@ struct RequestsView: View {
   @State private var showSearch = false
   @State private var showSettings = false
   @State private var configured = BlackboxConfig.isConfigured
+  @State private var me: BBRMe?
 
-  private var active: [BBRRequest] { requests.filter { $0.isBusy } }
+  private var approvals: [BBRRequest] { requests.filter { $0.needsApproval } }
+  private var active: [BBRRequest] { requests.filter { $0.isBusy && !$0.needsApproval } }
   private var problems: [BBRRequest] { requests.filter { $0.canRetry } }
   private var done: [BBRRequest] { requests.filter { !$0.isBusy && !$0.canRetry } }
 
@@ -20,6 +22,15 @@ struct RequestsView: View {
         if let error, configured {
           Label(error, systemImage: "exclamationmark.triangle.fill")
             .foregroundStyle(.red)
+        }
+        if !approvals.isEmpty {
+          Section {
+            rows(approvals)
+          } header: {
+            Text("Wartet auf Freigabe")
+          } footer: {
+            if me?.can("view_all") == true { Text("Nach rechts wischen zum Freigeben oder Ablehnen.") }
+          }
         }
         if !active.isEmpty {
           Section("In Arbeit") { rows(active) }
@@ -64,7 +75,12 @@ struct RequestsView: View {
         configured = BlackboxConfig.isConfigured
         Task { await load() }
       }) {
-        SettingsView()
+        NavigationStack {
+          BlackboxSettingsView()
+            .toolbar {
+              ToolbarItem(placement: .confirmationAction) { Button("Fertig") { showSettings = false } }
+            }
+        }
       }
       .appDestinations()
     }
@@ -74,9 +90,43 @@ struct RequestsView: View {
     ForEach(list) { r in
       Group {
         if r.status == "available" {
-          NavigationLink(value: Route.findInLibrary(title: r.title, author: r.artist)) { RequestRow(request: r) }
+          NavigationLink(value: Route.findInLibrary(title: r.title, author: r.artist)) {
+            RequestRow(request: r, showUsers: me?.can("view_all") ?? false)
+          }
         } else {
-          RequestRow(request: r)
+          RequestRow(request: r, showUsers: me?.can("view_all") ?? false)
+        }
+      }
+      .swipeActions(edge: .leading) {
+        if r.needsApproval, me?.can("view_all") == true {
+          Button {
+            Task {
+              try? await BlackboxClient().approve(r.id)
+              await load()
+            }
+          } label: {
+            Label("Freigeben", systemImage: "checkmark")
+          }
+          .tint(.green)
+          Button {
+            Task {
+              try? await BlackboxClient().decline(r.id)
+              await load()
+            }
+          } label: {
+            Label("Ablehnen", systemImage: "xmark")
+          }
+          .tint(.red)
+        }
+      }
+      .contextMenu {
+        if r.needsApproval, me?.can("view_all") == true {
+          Button {
+            Task { try? await BlackboxClient().approve(r.id); await load() }
+          } label: { Label("Freigeben", systemImage: "checkmark.circle") }
+          Button(role: .destructive) {
+            Task { try? await BlackboxClient().decline(r.id); await load() }
+          } label: { Label("Ablehnen", systemImage: "xmark.circle") }
         }
       }
       .swipeActions(edge: .trailing) {
@@ -129,6 +179,7 @@ struct RequestsView: View {
 
   private func load() async {
     guard BlackboxConfig.isConfigured else { loaded = true; return }
+    if me == nil { me = try? await BlackboxClient().me() }
     do {
       let r = try await BlackboxClient().requests()
       withAnimation { requests = r.sorted { $0.id > $1.id } }
@@ -143,6 +194,7 @@ struct RequestsView: View {
 
 struct RequestRow: View {
   let request: BBRRequest
+  var showUsers = false
 
   var body: some View {
     HStack(spacing: 12) {
@@ -154,6 +206,12 @@ struct RequestRow: View {
           .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
         if request.status == "downloading" {
           ProgressView(value: request.progress ?? 0).tint(.accentColor)
+        }
+        if showUsers, let users = request.users, !users.isEmpty {
+          Label(users.joined(separator: ", "), systemImage: "person")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
         }
         if let m = request.message, !m.isEmpty, !request.isBusy || request.status == "searching" {
           Text(m).font(.caption).foregroundStyle(.secondary).lineLimit(2)
@@ -211,26 +269,14 @@ struct RequestSearchView: View {
 
   var body: some View {
     NavigationStack {
-      List {
-        if let error {
-          Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
-        }
-        ForEach(books) { b in
-          NavigationLink(value: Route.requestBook(b.id)) { RequestBookRow(book: b) }
-        }
-      }
-      .listStyle(.plain)
-      .overlay {
+      Group {
         if trimmed.count < 2 {
-          ContentUnavailableView("Hörbuch anfragen", systemImage: "text.book.closed",
-                                 description: Text("Suche nach Titel, Autor oder Reihe."))
-        } else if searching, books.isEmpty {
-          ProgressView()
-        } else if books.isEmpty, error == nil {
-          ContentUnavailableView.search(text: trimmed)
+          DiscoverBooksView()
+        } else {
+          resultsList
         }
       }
-      .navigationTitle("Anfragen")
+      .navigationTitle("Hörbuch anfragen")
       .navigationBarTitleDisplayMode(.inline)
       .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Titel, Autor oder Reihe")
       .autocorrectionDisabled()
@@ -254,6 +300,25 @@ struct RequestSearchView: View {
       }
       .appDestinations()
     }
+  }
+
+  private var resultsList: some View {
+      List {
+        if let error {
+          Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
+        }
+        ForEach(books) { b in
+          NavigationLink(value: Route.requestBook(b.id)) { RequestBookRow(book: b) }
+        }
+      }
+      .listStyle(.plain)
+      .overlay {
+        if searching, books.isEmpty {
+          ProgressView()
+        } else if books.isEmpty, error == nil {
+          ContentUnavailableView.search(text: trimmed)
+        }
+      }
   }
 }
 
@@ -363,7 +428,7 @@ struct RequestBookDetailView: View {
 
   @ViewBuilder private func action(_ book: BBRBook) -> some View {
     if book.inLibrary == true {
-      NavigationLink(value: Route.findInLibrary(title: book.title, author: book.author)) {
+      NavigationLink(value: book.libraryId.map { Route.bookId($0) } ?? Route.findInLibrary(title: book.title, author: book.author)) {
         Label("In der Bibliothek öffnen", systemImage: "books.vertical")
           .font(.headline)
           .frame(maxWidth: .infinity, minHeight: 34)

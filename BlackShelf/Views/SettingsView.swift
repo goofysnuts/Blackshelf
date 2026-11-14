@@ -5,10 +5,6 @@ struct SettingsView: View {
   @Environment(PlayerEngine.self) private var player
   @Environment(\.dismiss) private var dismiss
 
-  @State private var bbUrl = BlackboxConfig.url
-  @State private var bbKey = BlackboxConfig.apiKey
-  @State private var bbTest: String?
-  @State private var bbTesting = false
   @State private var confirmLogout = false
 
   private let intervals: [Double] = [10, 15, 30, 45, 60]
@@ -59,35 +55,17 @@ struct SettingsView: View {
         }
 
         Section {
-          TextField("Adresse", text: $bbUrl, prompt: Text("http://NAS-IP:Port"))
-            .keyboardType(.URL)
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
-            .onChange(of: bbUrl) { _, v in BlackboxConfig.url = v; bbTest = nil }
-          SecureField("API-Schlüssel (optional)", text: $bbKey)
-            .textInputAutocapitalization(.never)
-            .onChange(of: bbKey) { _, v in BlackboxConfig.apiKey = v; bbTest = nil }
-          Button {
-            Task {
-              bbTesting = true
-              defer { bbTesting = false }
-              do { bbTest = try await BlackboxClient().health() } catch { bbTest = error.localizedDescription }
-            }
+          NavigationLink {
+            BlackboxSettingsView()
           } label: {
-            HStack {
-              Text("Verbindung testen")
-              Spacer()
-              if bbTesting { ProgressView() }
+            LabeledContent {
+              Text(BlackboxConfig.username.isEmpty ? (BlackboxConfig.isConfigured ? "Eingerichtet" : "Nicht eingerichtet") : BlackboxConfig.username)
+            } label: {
+              Label("Blackbox Request", systemImage: "tray.and.arrow.down")
             }
           }
-          .disabled(bbUrl.isEmpty || bbTesting)
-          if let bbTest {
-            Text(bbTest).font(.footnote).foregroundStyle(.secondary)
-          }
-        } header: {
-          Text("Blackbox Request")
         } footer: {
-          Text("Der gleiche Dienst wie in Blackbox – hier nur für Hörbücher. Angefragte Bücher landen automatisch in deiner Audiobookshelf-Bibliothek.")
+          Text("Hörbücher anfragen – sie landen automatisch in deiner Audiobookshelf-Bibliothek.")
         }
 
         Section {
