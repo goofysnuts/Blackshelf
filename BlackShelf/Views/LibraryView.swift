@@ -1,7 +1,12 @@
 import SwiftUI
 
+enum LibraryLayout: String {
+  case grid, list
+}
+
 struct LibraryView: View {
   @Environment(AppModel.self) private var app
+  @AppStorage("library.layout") private var layout: LibraryLayout = .grid
 
   enum Pane: String, CaseIterable, Identifiable {
     case books = "Titel", series = "Serien", authors = "Autoren", collections = "Sammlungen"
@@ -33,6 +38,16 @@ struct LibraryView: View {
       .toolbar {
         if app.bookLibraries.count > 1 {
           ToolbarItem(placement: .topBarLeading) { LibraryMenu() }
+        }
+        if section == .books || section == .series {
+          ToolbarItem(placement: .topBarTrailing) {
+            Button {
+              withAnimation { layout = layout == .grid ? .list : .grid }
+            } label: {
+              Image(systemName: layout == .grid ? "list.bullet" : "square.grid.2x2")
+            }
+            .accessibilityLabel(layout == .grid ? "Als Liste anzeigen" : "Als Kacheln anzeigen")
+          }
         }
       }
       .appDestinations()
@@ -86,6 +101,7 @@ struct BooksGrid: View {
   @AppStorage("library.sort") private var sort: Sort = .title
   @AppStorage("library.desc") private var descending = false
   @AppStorage("library.filter") private var filter: Filter = .all
+  @AppStorage("library.layout") private var layout: LibraryLayout = .grid
 
   @State private var items: [ABSItem] = []
   @State private var total = 0
@@ -95,20 +111,39 @@ struct BooksGrid: View {
 
   private let columns = [GridItem(.adaptive(minimum: 104, maximum: 180), spacing: 14, alignment: .top)]
 
-  var body: some View {
-    ScrollView {
-      LazyVGrid(columns: columns, spacing: 18) {
+  @ViewBuilder private var content: some View {
+    if layout == .grid {
+      ScrollView {
+        LazyVGrid(columns: columns, spacing: 18) {
+          ForEach(items) { item in
+            NavigationLink(value: Route.book(item)) {
+              BookTile(item: item)
+            }
+            .buttonStyle(.plain)
+            .onAppear { if item.id == items.last?.id { Task { await loadMore() } } }
+          }
+        }
+        .padding()
+        if loading, !items.isEmpty { ProgressView().padding() }
+      }
+    } else {
+      List {
         ForEach(items) { item in
           NavigationLink(value: Route.book(item)) {
-            BookTile(item: item)
+            BookRow(item: item)
           }
-          .buttonStyle(.plain)
           .onAppear { if item.id == items.last?.id { Task { await loadMore() } } }
         }
+        if loading, !items.isEmpty {
+          ProgressView().frame(maxWidth: .infinity).listRowSeparator(.hidden)
+        }
       }
-      .padding()
-      if loading, !items.isEmpty { ProgressView().padding() }
+      .listStyle(.plain)
     }
+  }
+
+  var body: some View {
+    content
     .overlay {
       if items.isEmpty {
         if loading { ProgressView() }
@@ -174,6 +209,7 @@ struct BooksGrid: View {
 
 struct SeriesGrid: View {
   @Environment(AppModel.self) private var app
+  @AppStorage("library.layout") private var layout: LibraryLayout = .grid
   @State private var series: [ABSSeries] = []
   @State private var total = 0
   @State private var page = 0
@@ -181,19 +217,44 @@ struct SeriesGrid: View {
 
   private let columns = [GridItem(.adaptive(minimum: 104, maximum: 180), spacing: 14, alignment: .top)]
 
-  var body: some View {
-    ScrollView {
-      LazyVGrid(columns: columns, spacing: 18) {
-        ForEach(series) { s in
-          NavigationLink(value: Route.series(id: s.id, name: s.name)) {
-            SeriesTile(series: s)
+  @ViewBuilder private var content: some View {
+    if layout == .grid {
+      ScrollView {
+        LazyVGrid(columns: columns, spacing: 18) {
+          ForEach(series) { s in
+            NavigationLink(value: Route.series(id: s.id, name: s.name)) {
+              SeriesTile(series: s)
+            }
+            .buttonStyle(.plain)
+            .onAppear { if s.id == series.last?.id { Task { await load(more: true) } } }
           }
-          .buttonStyle(.plain)
-          .onAppear { if s.id == series.last?.id { Task { await load(more: true) } } }
         }
+        .padding()
       }
-      .padding()
+    } else {
+      List(series) { s in
+        NavigationLink(value: Route.series(id: s.id, name: s.name)) {
+          HStack(spacing: 12) {
+            BookCover(item: s.books.first, cornerRadius: 6, width: 160)
+              .frame(width: 56)
+            VStack(alignment: .leading, spacing: 2) {
+              Text(s.name).lineLimit(2)
+              Text(s.books.count == 1 ? "1 Buch" : "\(s.books.count) Bücher")
+                .font(.caption).foregroundStyle(.secondary)
+              if let author = s.books.first?.author {
+                Text(author).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+              }
+            }
+          }
+        }
+        .onAppear { if s.id == series.last?.id { Task { await load(more: true) } } }
+      }
+      .listStyle(.plain)
     }
+  }
+
+  var body: some View {
+    content
     .overlay {
       if series.isEmpty {
         if loading { ProgressView() } else {

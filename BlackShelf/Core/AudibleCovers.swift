@@ -16,6 +16,12 @@ final class AudibleCovers {
   /// itemId → Cover-URL (1024 px); leerer String = auf Audible nicht gefunden
   private var map: [String: String] = UserDefaults.standard.dictionary(forKey: "covers.audible.map") as? [String: String] ?? [:]
 
+  /// Zuordnung von Blackbox Request (itemId → URL, "" = keins gefunden) – hat Vorrang vor der eigenen Suche
+  private var serverMap: [String: String] = UserDefaults.standard.dictionary(forKey: "covers.server.map") as? [String: String] ?? [:]
+  /// Server liefert Cover → keine eigene Suche mehr (die ist ungenauer)
+  private(set) var serverActive: Bool = UserDefaults.standard.bool(forKey: "covers.server.active")
+  @ObservationIgnored private var serverTask: Task<Void, Never>?
+
   @ObservationIgnored private var running: [String: Task<Void, Never>] = [:]
   @ObservationIgnored private var slots = 4
   @ObservationIgnored private var waiting: [CheckedContinuation<Void, Never>] = []
@@ -26,6 +32,12 @@ final class AudibleCovers {
   enum Lookup { case unknown, none, found(URL) }
 
   func lookup(_ itemId: String, size: Int) -> Lookup {
+    if let s = serverMap[itemId] {
+      guard !s.isEmpty else { return .none }
+      let sized = size >= 1024 ? s : s.replacingOccurrences(of: "_SL1024_", with: "_SL\(size)_")
+      return URL(string: sized).map(Lookup.found) ?? .none
+    }
+    if serverActive { return .none }
     guard let s = map[itemId] else { return .unknown }
     guard !s.isEmpty else { return .none }
     let sized = size >= 1024 ? s : s.replacingOccurrences(of: "_SL1024_", with: "_SL\(size)_")
@@ -42,7 +54,7 @@ final class AudibleCovers {
 
   /// Sucht das Audible-Cover im Hintergrund (einmal pro Buch)
   func resolveIfNeeded(_ item: ABSItem) {
-    guard enabled, map[item.id] == nil, running[item.id] == nil else { return }
+    guard enabled, !serverActive, map[item.id] == nil, running[item.id] == nil else { return }
     running[item.id] = Task {
       await acquire()
       let found = await Self.find(item)
@@ -57,6 +69,26 @@ final class AudibleCovers {
   func reset() {
     map = [:]
     UserDefaults.standard.removeObject(forKey: "covers.audible.map")
+    refreshFromServer()
+  }
+
+  /// Cover-Zuordnung von Blackbox Request laden; solange der Server noch zuordnet, alle 10 s nachladen
+  func refreshFromServer() {
+    guard enabled, BlackboxConfig.isConfigured, serverTask == nil else { return }
+    serverTask = Task {
+      defer { serverTask = nil }
+      for _ in 0 ..< 60 {
+        guard let r = try? await BlackboxClient().libraryCovers() else { return }
+        if !r.covers.isEmpty || !serverActive {
+          serverMap = r.covers
+          serverActive = true
+          UserDefaults.standard.set(r.covers, forKey: "covers.server.map")
+          UserDefaults.standard.set(true, forKey: "covers.server.active")
+        }
+        guard r.running else { return }
+        try? await Task.sleep(nanoseconds: 10_000_000_000)
+      }
+    }
   }
 
   func forget(_ itemId: String) {

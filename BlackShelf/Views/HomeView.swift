@@ -8,6 +8,7 @@ struct HomeView: View {
   @State private var error: String?
   @State private var showSettings = false
   @State private var stats: ABSListeningStats?
+  @State private var bookOfDay: ABSItem?
 
   private var continueShelf: ABSShelf? { shelves.first { $0.id == "continue-listening" } }
   private var otherShelves: [ABSShelf] {
@@ -20,6 +21,12 @@ struct HomeView: View {
         LazyVStack(alignment: .leading, spacing: 28) {
           if let c = continueShelf, !c.items.isEmpty {
             ContinueListeningSection(items: c.items)
+          }
+          if let bookOfDay {
+            BookOfTheDayCard(item: bookOfDay) {
+              Task { await loadBookOfDay(forceNew: true) }
+            }
+            .padding(.horizontal)
           }
           if let stats, stats.totalTime > 0 {
             StatsSummaryCard(stats: stats)
@@ -86,8 +93,118 @@ struct HomeView: View {
     } catch {
       if shelves.isEmpty { self.error = error.localizedDescription }
     }
+    await loadBookOfDay()
     let fetchedStats = await statsTask
     if let fetchedStats { stats = fetchedStats }
+  }
+}
+
+extension HomeView {
+  /// Ein zufälliges, noch nicht begonnenes Hörbuch – bleibt den ganzen Tag gleich
+  func loadBookOfDay(forceNew: Bool = false) async {
+    guard let lib = app.libraryId else { return }
+    let client = ABSClient.shared
+    let key = "home.bookOfDay.\(lib)"
+    let f = DateFormatter()
+    f.dateFormat = "yyyy-MM-dd"
+    let today = f.string(from: Date())
+    if !forceNew, let stored = UserDefaults.standard.string(forKey: key) {
+      let parts = stored.split(separator: "|", maxSplits: 1).map(String.init)
+      if parts.count == 2, parts[0] == today {
+        if bookOfDay?.id == parts[1] { return }
+        if let item = try? await client.item(parts[1]) {
+          bookOfDay = item
+          return
+        }
+      }
+    }
+    for filter in [BooksGrid.Filter.notStarted.query, nil] {
+      guard let first = try? await client.items(lib, sort: "media.metadata.title", desc: false, page: 0,
+                                                limit: 1, filter: filter),
+            let total = first.total, total > 0 else { continue }
+      var pick: ABSItem?
+      for _ in 0 ..< 3 {
+        let page = try? await client.items(lib, sort: "media.metadata.title", desc: false,
+                                           page: Int.random(in: 0 ..< total), limit: 1, filter: filter)
+        if let candidate = page?.results.first, candidate.id != bookOfDay?.id || total == 1 {
+          pick = candidate
+          break
+        }
+      }
+      if let pick {
+        withAnimation { bookOfDay = pick }
+        UserDefaults.standard.set("\(today)|\(pick.id)", forKey: key)
+        return
+      }
+    }
+  }
+}
+
+// MARK: - Hörbuch des Tages
+
+struct BookOfTheDayCard: View {
+  let item: ABSItem
+  var reroll: () -> Void = {}
+  @Environment(PlayerEngine.self) private var player
+  @ScaledMetric(relativeTo: .title3) private var height: CGFloat = 150
+
+  private var isCurrent: Bool { player.item?.id == item.id }
+
+  var body: some View {
+    NavigationLink(value: Route.book(item)) {
+      HStack(spacing: 14) {
+        BookCover(item: item, cornerRadius: 0, width: 500)
+          .frame(width: min(height, 200), height: min(height, 200))
+        VStack(alignment: .leading, spacing: 2) {
+          Text("Hörbuch des Tages")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+          Text(item.title)
+            .font(.title3.bold())
+            .lineLimit(2)
+          Text(item.author)
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+          Spacer(minLength: 4)
+          HStack(alignment: .center) {
+            Text(item.media.metadata.displaySeries ?? (item.duration > 0 ? Fmt.duration(item.duration) : ""))
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .lineLimit(2)
+            Spacer(minLength: 6)
+            Button {
+              if isCurrent { player.togglePlayPause() } else { Task { await player.play(item) } }
+            } label: {
+              Image(systemName: isCurrent && player.isPlaying ? "pause.fill" : "play.fill")
+                .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(Color(.systemBackground))
+                .frame(width: 44, height: 44)
+                .background(Color.primary, in: Circle())
+                .contentTransition(.symbolEffect(.replace))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isCurrent && player.isPlaying ? "Pause" : "Abspielen")
+          }
+        }
+        .padding(.vertical, 12)
+        .padding(.trailing, 12)
+      }
+      .frame(height: min(height, 200))
+      .background(Color(.secondarySystemBackground))
+      .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+      .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+    .buttonStyle(.plain)
+    .contextMenu {
+      Button {
+        reroll()
+      } label: {
+        Label("Anderes Hörbuch vorschlagen", systemImage: "shuffle")
+      }
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Hörbuch des Tages: \(item.title) von \(item.author)")
   }
 }
 

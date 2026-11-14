@@ -2,13 +2,11 @@ import SwiftUI
 
 // MARK: - Anfragen-Tab: eigene Hörbuch-Anfragen mit Live-Status
 
-struct RequestsView: View {
+/// Anfragen-Liste (für Admins über „Anfragen“ im Entdecken-Tab erreichbar)
+struct RequestsListView: View {
   @State private var requests: [BBRRequest] = []
   @State private var loaded = false
   @State private var error: String?
-  @State private var showSearch = false
-  @State private var showSettings = false
-  @State private var configured = BlackboxConfig.isConfigured
   @State private var me: BBRMe?
 
   private var approvals: [BBRRequest] { requests.filter { $0.needsApproval } }
@@ -17,72 +15,46 @@ struct RequestsView: View {
   private var done: [BBRRequest] { requests.filter { !$0.isBusy && !$0.canRetry } }
 
   var body: some View {
-    NavigationStack {
-      List {
-        if let error, configured {
-          Label(error, systemImage: "exclamationmark.triangle.fill")
-            .foregroundStyle(.red)
-        }
-        if !approvals.isEmpty {
-          Section {
-            rows(approvals)
-          } header: {
-            Text("Wartet auf Freigabe")
-          } footer: {
-            if me?.can("view_all") == true { Text("Nach rechts wischen zum Freigeben oder Ablehnen.") }
-          }
-        }
-        if !active.isEmpty {
-          Section("In Arbeit") { rows(active) }
-        }
-        if !problems.isEmpty {
-          Section {
-            rows(problems)
-          } header: {
-            Text("Nicht geklappt")
-          } footer: {
-            Text("Nach links wischen, um es erneut zu versuchen.")
-          }
-        }
-        if !done.isEmpty {
-          Section("Erledigt") { rows(done) }
+    List {
+      if let error {
+        Label(error, systemImage: "exclamationmark.triangle.fill")
+          .foregroundStyle(.red)
+      }
+      if !approvals.isEmpty {
+        Section {
+          rows(approvals)
+        } header: {
+          Text("Wartet auf Freigabe")
+        } footer: {
+          if me?.can("view_all") == true { Text("Nach rechts wischen zum Freigeben oder Ablehnen.") }
         }
       }
-      .listStyle(.insetGrouped)
-      .overlay { emptyState }
-      .navigationTitle("Anfragen")
-      .toolbar {
-        if configured {
-          ToolbarItem(placement: .topBarTrailing) {
-            Button { showSearch = true } label: { Image(systemName: "plus") }
-              .accessibilityLabel("Hörbuch anfragen")
-          }
+      if !active.isEmpty {
+        Section("In Arbeit") { rows(active) }
+      }
+      if !problems.isEmpty {
+        Section {
+          rows(problems)
+        } header: {
+          Text("Nicht geklappt")
+        } footer: {
+          Text("Nach links wischen, um es erneut zu versuchen.")
         }
       }
-      .refreshable { await load() }
-      .task {
-        // Status live aktualisieren, solange der Tab sichtbar ist
-        while !Task.isCancelled {
-          configured = BlackboxConfig.isConfigured
-          await load()
-          try? await Task.sleep(nanoseconds: active.isEmpty ? 15_000_000_000 : 4_000_000_000)
-        }
+      if !done.isEmpty {
+        Section("Erledigt") { rows(done) }
       }
-      .sheet(isPresented: $showSearch, onDismiss: { Task { await load() } }) {
-        RequestSearchView()
+    }
+    .listStyle(.insetGrouped)
+    .overlay { emptyState }
+    .navigationTitle("Anfragen")
+    .refreshable { await load() }
+    .task {
+      // Status live aktualisieren, solange die Liste sichtbar ist
+      while !Task.isCancelled {
+        await load()
+        try? await Task.sleep(nanoseconds: active.isEmpty ? 15_000_000_000 : 4_000_000_000)
       }
-      .sheet(isPresented: $showSettings, onDismiss: {
-        configured = BlackboxConfig.isConfigured
-        Task { await load() }
-      }) {
-        NavigationStack {
-          BlackboxSettingsView()
-            .toolbar {
-              ToolbarItem(placement: .confirmationAction) { Button("Fertig") { showSettings = false } }
-            }
-        }
-      }
-      .appDestinations()
     }
   }
 
@@ -154,26 +126,11 @@ struct RequestsView: View {
   }
 
   @ViewBuilder private var emptyState: some View {
-    if !configured {
-      ContentUnavailableView {
-        Label("Blackbox Request einrichten", systemImage: "tray.and.arrow.down")
-      } description: {
-        Text("Trage die Adresse deines Blackbox-Request-Servers ein, um fehlende Hörbücher anzufragen.")
-      } actions: {
-        Button("Einstellungen öffnen") { showSettings = true }
-          .buttonStyle(.borderedProminent)
-      }
-    } else if !loaded {
+    if !loaded {
       ProgressView()
     } else if requests.isEmpty, error == nil {
-      ContentUnavailableView {
-        Label("Keine Anfragen", systemImage: "tray")
-      } description: {
-        Text("Fehlt dir ein Hörbuch? Frag es an – es landet automatisch in deiner Bibliothek.")
-      } actions: {
-        Button("Hörbuch anfragen") { showSearch = true }
-          .buttonStyle(.borderedProminent)
-      }
+      ContentUnavailableView("Keine Anfragen", systemImage: "tray",
+                             description: Text("Angefragte Hörbücher erscheinen hier mit ihrem Status."))
     }
   }
 
@@ -256,30 +213,52 @@ struct RequestCover: View {
   }
 }
 
-// MARK: - Suche zum Anfragen (Sheet aus dem Anfragen-Tab)
+// MARK: - Entdecken-Tab: Empfehlungen & Neuerscheinungen, Suche zum Anfragen
 
-struct RequestSearchView: View {
-  @Environment(\.dismiss) private var dismiss
+struct DiscoverTabView: View {
   @State private var query = ""
   @State private var books: [BBRBook] = []
   @State private var searching = false
   @State private var error: String?
+  @State private var me: BBRMe?
+  @State private var pendingApprovals = 0
+  @State private var configured = BlackboxConfig.isConfigured
+  @State private var showSettings = false
 
   private var trimmed: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
+  private var isAdmin: Bool { me?.isAdmin == true || me?.can("view_all") == true }
 
   var body: some View {
     NavigationStack {
       Group {
-        if trimmed.count < 2 {
+        if !configured {
+          ContentUnavailableView {
+            Label("Blackbox Request einrichten", systemImage: "sparkles")
+          } description: {
+            Text("Verbinde BlackShelf mit Blackbox Request, um neue Hörbücher zu entdecken und anzufragen.")
+          } actions: {
+            Button("Einrichten") { showSettings = true }
+              .buttonStyle(.borderedProminent)
+          }
+        } else if trimmed.count < 2 {
           DiscoverBooksView()
         } else {
           resultsList
         }
       }
-      .navigationTitle("Hörbuch anfragen")
-      .navigationBarTitleDisplayMode(.inline)
-      .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Titel, Autor oder Reihe")
+      .navigationTitle("Entdecken")
+      .searchable(text: $query, prompt: "Hörbücher suchen und anfragen")
       .autocorrectionDisabled()
+      .toolbar {
+        if isAdmin {
+          ToolbarItem(placement: .topBarTrailing) {
+            NavigationLink(value: Route.requests) {
+              Text(pendingApprovals > 0 ? "Anfragen (\(pendingApprovals))" : "Anfragen")
+            }
+            .accessibilityHint(pendingApprovals > 0 ? "\(pendingApprovals) warten auf Freigabe" : "")
+          }
+        }
+      }
       .task(id: trimmed) {
         guard trimmed.count >= 2 else { books = []; return }
         try? await Task.sleep(nanoseconds: 450_000_000)
@@ -295,30 +274,51 @@ struct RequestSearchView: View {
           if !Task.isCancelled { self.error = error.localizedDescription }
         }
       }
-      .toolbar {
-        ToolbarItem(placement: .cancellationAction) { Button("Schließen") { dismiss() } }
+      .task {
+        // Rolle prüfen und offene Freigaben zählen
+        while !Task.isCancelled {
+          configured = BlackboxConfig.isConfigured
+          if configured {
+            if me == nil { me = try? await BlackboxClient().me() }
+            if isAdmin, let r = try? await BlackboxClient().requests() {
+              pendingApprovals = r.filter(\.needsApproval).count
+            }
+          }
+          try? await Task.sleep(nanoseconds: 30_000_000_000)
+        }
+      }
+      .sheet(isPresented: $showSettings, onDismiss: {
+        configured = BlackboxConfig.isConfigured
+        me = nil
+      }) {
+        NavigationStack {
+          BlackboxSettingsView()
+            .toolbar {
+              ToolbarItem(placement: .confirmationAction) { Button("Fertig") { showSettings = false } }
+            }
+        }
       }
       .appDestinations()
     }
   }
 
   private var resultsList: some View {
-      List {
-        if let error {
-          Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
-        }
-        ForEach(books) { b in
-          NavigationLink(value: Route.requestBook(b.id)) { RequestBookRow(book: b) }
-        }
+    List {
+      if let error {
+        Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
       }
-      .listStyle(.plain)
-      .overlay {
-        if searching, books.isEmpty {
-          ProgressView()
-        } else if books.isEmpty, error == nil {
-          ContentUnavailableView.search(text: trimmed)
-        }
+      ForEach(books) { b in
+        NavigationLink(value: Route.requestBook(b.id)) { RequestBookRow(book: b) }
       }
+    }
+    .listStyle(.plain)
+    .overlay {
+      if searching, books.isEmpty {
+        ProgressView()
+      } else if books.isEmpty, error == nil {
+        ContentUnavailableView.search(text: trimmed)
+      }
+    }
   }
 }
 

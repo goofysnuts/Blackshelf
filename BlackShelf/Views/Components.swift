@@ -271,6 +271,7 @@ enum Route: Hashable {
   case findInLibrary(title: String, author: String)
   case bookId(String)
   case stats
+  case requests
 }
 
 extension View {
@@ -286,12 +287,41 @@ extension View {
       case let .findInLibrary(title, author): FindInLibraryView(title: title, author: author)
       case let .bookId(id): BookLoaderView(itemId: id)
       case .stats: StatsView()
+      case .requests: RequestsListView()
       }
     }
   }
 
-  /// Mini-Player über der Tab-Leiste
+  /// Mini-Player über der Tab-Leiste (ab iOS 26.1 übernimmt das die Tab-Leiste selbst)
   func miniPlayerInset() -> some View {
-    safeAreaInset(edge: .bottom, spacing: 0) { MiniPlayerBar() }
+    modifier(MiniPlayerInsetModifier())
+  }
+}
+
+struct MiniPlayerInsetModifier: ViewModifier {
+  func body(content: Content) -> some View {
+    if #available(iOS 26.1, *) {
+      content
+    } else {
+      content.safeAreaInset(edge: .bottom, spacing: 0) { MiniPlayerBar() }
+    }
+  }
+}
+
+/// iOS 26.1+: Mini-Player als Zubehör der Tab-Leiste – das System hält Listen-Inhalte frei,
+/// nichts wird mehr verdeckt, und beim Scrollen wird die Leiste kompakt.
+struct TabBarAccessoryModifier: ViewModifier {
+  @Environment(PlayerEngine.self) private var player
+
+  func body(content: Content) -> some View {
+    if #available(iOS 26.1, *) {
+      content
+        .tabViewBottomAccessory(isEnabled: player.hasItem) {
+          MiniPlayerAccessory()
+        }
+        .tabBarMinimizeBehavior(.onScrollDown)
+    } else {
+      content
+    }
   }
 }

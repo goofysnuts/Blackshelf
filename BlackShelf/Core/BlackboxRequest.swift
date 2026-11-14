@@ -267,6 +267,16 @@ struct BlackboxClient {
     return try await send("/api/books/\(enc)")
   }
 
+  // MARK: Audible-Cover der Bibliothek
+
+  private struct CoverJob: Decodable { let running: Bool }
+  private struct Covers: Decodable { let covers: [String: String]; let job: CoverJob }
+
+  func libraryCovers() async throws -> (covers: [String: String], running: Bool) {
+    let r: Covers = try await send("/api/books/library-covers")
+    return (r.covers, r.job.running)
+  }
+
   // MARK: Anfragen
 
   /// Nur Hörbuch-Anfragen

@@ -143,6 +143,7 @@ struct BlackboxSettingsView: View {
         key = ""
       }
       loggedIn = true
+      AudibleCovers.shared.refreshFromServer()
     } catch {
       message = error.localizedDescription
     }

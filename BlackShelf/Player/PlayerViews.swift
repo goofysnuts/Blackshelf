@@ -88,6 +88,77 @@ struct MiniPlayerBar: View {
   }
 }
 
+/// Inhalt des Tab-Leisten-Zubehörs (iOS 26.1+). Den Glas-Hintergrund liefert das System.
+@available(iOS 26.0, *)
+struct MiniPlayerAccessory: View {
+  @Environment(PlayerEngine.self) private var player
+  @Environment(\.tabViewBottomAccessoryPlacement) private var placement
+
+  private var compact: Bool { placement == .inline }
+
+  var body: some View {
+    if let item = player.item {
+      HStack(spacing: 10) {
+        BookCover(item: item, cornerRadius: 5, width: 160)
+          .frame(width: 30, height: 30)
+        VStack(alignment: .leading, spacing: 0) {
+          Text(item.title)
+            .font(.subheadline.weight(.semibold))
+            .lineLimit(1)
+          if !compact {
+            Text(player.currentChapter?.title.nilIfEmpty ?? item.author)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .lineLimit(1)
+          }
+        }
+        Spacer(minLength: 4)
+        Button {
+          player.togglePlayPause()
+        } label: {
+          ZStack {
+            if player.isBuffering || player.isStarting {
+              ProgressView()
+            } else {
+              Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                .font(.title3)
+                .contentTransition(.symbolEffect(.replace))
+            }
+          }
+          .frame(width: 36, height: 36)
+          .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(player.isPlaying ? "Pause" : "Abspielen")
+        if !compact {
+          Button {
+            player.skipForward()
+          } label: {
+            Image(systemName: "goforward.\(Int(player.skipForwardInterval))")
+              .font(.title3)
+              .frame(width: 36, height: 36)
+              .contentShape(Rectangle())
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel("\(Int(player.skipForwardInterval)) Sekunden vor")
+        }
+      }
+      .padding(.leading, 6)
+      .padding(.trailing, 10)
+      .contentShape(Rectangle())
+      .onTapGesture { player.isPresented = true }
+      .accessibilityAction(named: "Player öffnen") { player.isPresented = true }
+      .contextMenu {
+        Button(role: .destructive) {
+          Task { await player.stop() }
+        } label: {
+          Label("Wiedergabe beenden", systemImage: "xmark.circle")
+        }
+      }
+    }
+  }
+}
+
 extension String {
   var nilIfEmpty: String? { isEmpty ? nil : self }
 }

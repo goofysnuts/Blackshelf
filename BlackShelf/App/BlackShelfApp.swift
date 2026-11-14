@@ -19,6 +19,7 @@ struct BlackShelfApp: App {
           player.app = app
           if app.isLoggedIn {
             await app.bootstrap()
+            AudibleCovers.shared.refreshFromServer()
             await player.restoreLastItem()
           }
         }
@@ -26,7 +27,11 @@ struct BlackShelfApp: App {
     .onChange(of: scenePhase) { _, phase in
       switch phase {
       case .background: player.sync()
-      case .active: if app.isLoggedIn { Task { await app.refreshProgress() } }
+      case .active:
+        if app.isLoggedIn {
+          Task { await app.refreshProgress() }
+          AudibleCovers.shared.refreshFromServer()
+        }
       default: break
       }
     }
@@ -63,13 +68,14 @@ struct MainTabView: View {
       Tab("Bibliothek", systemImage: "books.vertical", value: AppTab.library) {
         LibraryView().miniPlayerInset()
       }
-      Tab("Anfragen", systemImage: "tray.and.arrow.down", value: AppTab.requests) {
-        RequestsView().miniPlayerInset()
+      Tab("Entdecken", systemImage: "sparkles", value: AppTab.requests) {
+        DiscoverTabView().miniPlayerInset()
       }
       Tab(value: AppTab.search, role: .search) {
         SearchView().miniPlayerInset()
       }
     }
+    .modifier(TabBarAccessoryModifier())
     .sheet(isPresented: $player.isPresented) {
       PlayerView()
     }
