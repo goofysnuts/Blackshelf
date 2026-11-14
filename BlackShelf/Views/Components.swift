@@ -272,6 +272,8 @@ enum Route: Hashable {
   case bookId(String)
   case stats
   case requests
+  case genre(String)
+  case audibleCategory(id: String, name: String)
 }
 
 extension View {
@@ -288,6 +290,8 @@ extension View {
       case let .bookId(id): BookLoaderView(itemId: id)
       case .stats: StatsView()
       case .requests: RequestsListView()
+      case let .genre(name): GenreBooksView(genre: name)
+      case let .audibleCategory(id, name): AudibleCategoryView(categoryId: id, name: name)
       }
     }
   }
@@ -309,7 +313,7 @@ struct MiniPlayerInsetModifier: ViewModifier {
 }
 
 /// iOS 26.1+: Mini-Player als Zubehör der Tab-Leiste – das System hält Listen-Inhalte frei,
-/// nichts wird mehr verdeckt, und beim Scrollen wird die Leiste kompakt.
+/// nichts wird mehr verdeckt. Beim Scrollen bleibt der Mini-Player in voller Größe.
 struct TabBarAccessoryModifier: ViewModifier {
   @Environment(PlayerEngine.self) private var player
 
@@ -319,7 +323,7 @@ struct TabBarAccessoryModifier: ViewModifier {
         .tabViewBottomAccessory(isEnabled: player.hasItem) {
           MiniPlayerAccessory()
         }
-        .tabBarMinimizeBehavior(.onScrollDown)
+        .tabBarMinimizeBehavior(.never)
     } else {
       content
     }

@@ -53,7 +53,7 @@ struct RootView: View {
   }
 }
 
-enum AppTab: Hashable { case home, library, requests, search }
+enum AppTab: Hashable { case home, categories, library, requests, search }
 
 struct MainTabView: View {
   @Environment(PlayerEngine.self) private var player
@@ -64,6 +64,9 @@ struct MainTabView: View {
     TabView(selection: $tab) {
       Tab("Start", systemImage: "house", value: AppTab.home) {
         HomeView().miniPlayerInset()
+      }
+      Tab("Kategorien", systemImage: "square.grid.2x2", value: AppTab.categories) {
+        CategoriesView().miniPlayerInset()
       }
       Tab("Bibliothek", systemImage: "books.vertical", value: AppTab.library) {
         LibraryView().miniPlayerInset()

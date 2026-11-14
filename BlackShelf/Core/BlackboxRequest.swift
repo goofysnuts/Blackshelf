@@ -291,9 +291,58 @@ struct BlackboxClient {
   }
 
   /// Empfehlungen zu einem Buch der Bibliothek (Reihe, Autor, ähnliche – vorhandene und anfragbare)
-  func similar(toLibraryItem id: String) async throws -> [BBRSection] {
-    let r: Sections = try await send("/api/books/similar/\(id)")
+  func similar(to item: ABSItem) async throws -> [BBRSection] {
+    let m = item.media.metadata
+    var comps = URLComponents()
+    comps.queryItems = [
+      URLQueryItem(name: "title", value: item.title),
+      URLQueryItem(name: "author", value: m.authors?.first?.name ?? m.authorName ?? ""),
+      URLQueryItem(name: "series", value: m.series?.first.map { s in s.sequence.map { "\(s.name) #\($0)" } ?? s.name } ?? m.seriesName ?? ""),
+      URLQueryItem(name: "asin", value: m.asin ?? ""),
+    ]
+    let r: Sections = try await send("/api/books/similar/\(item.id)?\(comps.percentEncodedQuery ?? "")")
     return r.sections
+  }
+
+  // MARK: Kategorien
+
+  struct LibraryGenre: Decodable, Hashable, Identifiable {
+    let name: String
+    let count: Int
+    var id: String { name }
+  }
+
+  struct Category: Decodable, Hashable, Identifiable {
+    let id: String
+    let name: String
+  }
+
+  private struct Genres: Decodable { let genres: [LibraryGenre] }
+  private struct Categories: Decodable { let categories: [Category] }
+
+  func libraryGenres() async throws -> [LibraryGenre] {
+    let r: Genres = try await send("/api/books/library-genres")
+    return r.genres
+  }
+
+  func categories() async throws -> [Category] {
+    let r: Categories = try await send("/api/books/categories")
+    return r.categories
+  }
+
+  func category(_ id: String) async throws -> [BBRSection] {
+    let r: Sections = try await send("/api/books/category/\(id)")
+    return r.sections
+  }
+
+  /// Kachelbild im Stil der Blackbox-Genres (Bilder brauchen den Schlüssel als Query-Parameter)
+  func genreCoverURL(name: String, category: String? = nil) -> URL? {
+    guard var c = URLComponents(string: base + "/api/books/genre-cover") else { return nil }
+    var q = [URLQueryItem(name: "name", value: name)]
+    if let category { q.append(URLQueryItem(name: "category", value: category)) }
+    if !apiKey.isEmpty { q.append(URLQueryItem(name: "apikey", value: apiKey)) }
+    c.queryItems = q
+    return c.url
   }
 
   // MARK: Anfragen

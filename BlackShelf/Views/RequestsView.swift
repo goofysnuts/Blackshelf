@@ -224,6 +224,12 @@ struct DiscoverTabView: View {
   @State private var pendingApprovals = 0
   @State private var configured = BlackboxConfig.isConfigured
   @State private var showSettings = false
+  @AppStorage("discover.mode") private var mode: DiscoverMode = .forYou
+
+  enum DiscoverMode: String, CaseIterable, Identifiable {
+    case forYou = "Für dich", categories = "Kategorien"
+    var id: Self { self }
+  }
 
   private var trimmed: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
   private var isAdmin: Bool { me?.isAdmin == true || me?.can("view_all") == true }
@@ -241,7 +247,22 @@ struct DiscoverTabView: View {
               .buttonStyle(.borderedProminent)
           }
         } else if trimmed.count < 2 {
-          DiscoverBooksView()
+          Group {
+            if mode == .categories {
+              AudibleCategoriesGrid()
+            } else {
+              DiscoverBooksView()
+            }
+          }
+          .safeAreaInset(edge: .top, spacing: 0) {
+            Picker("Ansicht", selection: $mode) {
+              ForEach(DiscoverMode.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+            .padding(.bottom, 8)
+            .background(.bar)
+          }
         } else {
           resultsList
         }

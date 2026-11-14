@@ -39,11 +39,14 @@ struct BookDetailView: View {
       if let d = meta.description, !d.isEmpty {
         Section("Beschreibung") {
           VStack(alignment: .leading, spacing: 6) {
+            // .id erzwingt neues Layout der Listenzeile – sonst bleibt sie nach „Mehr“ gleich hoch
             Text(cleanDescription(d))
               .font(.callout)
               .lineLimit(showFullDescription ? nil : 5)
+              .fixedSize(horizontal: false, vertical: true)
+              .id(showFullDescription)
             Button(showFullDescription ? "Weniger" : "Mehr") {
-              withAnimation { showFullDescription.toggle() }
+              showFullDescription.toggle()
             }
             .font(.callout.weight(.semibold))
             .buttonStyle(.borderless)
@@ -117,7 +120,9 @@ struct BookDetailView: View {
     .task { full = try? await ABSClient.shared.item(item.id) }
     .task(id: item.id) {
       guard BlackboxConfig.isConfigured else { return }
-      if let r = try? await BlackboxClient().similar(toLibraryItem: item.id) {
+      var source = full
+      if source == nil { source = try? await ABSClient.shared.item(item.id) }
+      if let r = try? await BlackboxClient().similar(to: source ?? item) {
         withAnimation { recommendations = r }
       }
     }

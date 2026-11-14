@@ -228,6 +228,18 @@ final class ABSClient {
     }
   }
 
+  /// Genres der Bibliothek (Filterdaten von Audiobookshelf)
+  func genres(_ libraryId: String) async throws -> [String] {
+    struct FilterData: Decodable { let genres: [String]? }
+    let r: FilterData = try await get("/api/libraries/\(libraryId)/filterdata")
+    return (r.genres ?? []).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+  }
+
+  static func genreFilter(_ name: String) -> String {
+    let b64 = Data(name.utf8).base64EncodedString()
+    return ("genres." + b64).addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? b64
+  }
+
   func authors(_ libraryId: String) async throws -> [ABSAuthor] {
     let r: ABSAuthorsResponse = try await get("/api/libraries/\(libraryId)/authors")
     return r.authors.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
