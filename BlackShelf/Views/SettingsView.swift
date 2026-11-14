@@ -16,8 +16,15 @@ struct SettingsView: View {
   var body: some View {
     @Bindable var app = app
     @Bindable var player = player
+    @Bindable var covers = AudibleCovers.shared
     NavigationStack {
       Form {
+        Section {
+          NavigationLink(value: Route.stats) {
+            Label("Hörstatistik", systemImage: "chart.bar.fill")
+          }
+        }
+
         Section("Audiobookshelf") {
           LabeledContent("Server", value: ABSClient.shared.baseURL)
           if let u = app.username { LabeledContent("Benutzer", value: u) }
@@ -39,6 +46,16 @@ struct SettingsView: View {
           Text("Wiedergabe")
         } footer: {
           Text("Gilt auch für Sperrbildschirm, Kontrollzentrum und Kopfhörer.")
+        }
+
+        Section {
+          Toggle("Cover von Audible", isOn: $covers.enabled)
+          Button("Cover neu suchen") { AudibleCovers.shared.reset() }
+            .disabled(!covers.enabled)
+        } header: {
+          Text("Darstellung")
+        } footer: {
+          Text("Zeigt statt der Cover aus Audiobookshelf die offiziellen Audible-Cover, sofern das Buch dort gefunden wird.")
         }
 
         Section {
@@ -82,6 +99,7 @@ struct SettingsView: View {
         }
       }
       .navigationTitle("Einstellungen")
+      .appDestinations()
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .confirmationAction) {

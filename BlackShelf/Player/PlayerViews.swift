@@ -8,7 +8,7 @@ struct MiniPlayerBar: View {
   var body: some View {
     if let item = player.item {
       HStack(spacing: 12) {
-        BookCover(itemId: item.id, cornerRadius: 6, width: 160)
+        BookCover(item: item, cornerRadius: 6, width: 160)
           .frame(width: 44, height: 44)
         VStack(alignment: .leading, spacing: 1) {
           Text(item.title)
@@ -116,7 +116,7 @@ struct PlayerView: View {
       VStack(spacing: 0) {
         topBar
         Spacer(minLength: 12)
-        BookCover(itemId: item.id, cornerRadius: 16, width: 900)
+        BookCover(item: item, cornerRadius: 16, width: 900)
           .frame(maxWidth: 340)
           .scaleEffect(player.isPlaying ? 1 : 0.86)
           .shadow(color: .black.opacity(player.isPlaying ? 0.3 : 0.15), radius: player.isPlaying ? 24 : 12, y: 10)

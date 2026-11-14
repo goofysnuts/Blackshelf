@@ -82,10 +82,12 @@ struct ABSMetadata: Codable, Hashable {
   var genres: [String]?
   var language: String?
   var abridged: Bool?
+  var asin: String?
+  var isbn: String?
 
   enum CodingKeys: String, CodingKey {
     case title, subtitle, authorName, authors, narratorName, narrators, seriesName, series
-    case description, publishedYear, publisher, genres, language, abridged
+    case description, publishedYear, publisher, genres, language, abridged, asin, isbn
   }
 
   init(from decoder: Decoder) throws {
@@ -109,6 +111,8 @@ struct ABSMetadata: Codable, Hashable {
     genres = c.lenient([String].self, .genres)
     language = c.lenient(String.self, .language)
     abridged = c.lenient(Bool.self, .abridged)
+    asin = c.lenient(String.self, .asin)
+    isbn = c.lenient(String.self, .isbn)
   }
 
   var displayAuthor: String {
@@ -246,14 +250,16 @@ struct ABSProgress: Codable, Hashable {
 struct ABSMe: Decodable {
   let id: String?
   let username: String?
+  let type: String?
   let mediaProgress: [ABSProgress]
 
-  enum CodingKeys: String, CodingKey { case id, username, mediaProgress }
+  enum CodingKeys: String, CodingKey { case id, username, type, mediaProgress }
 
   init(from decoder: Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
     id = c.lenient(String.self, .id)
     username = c.lenient(String.self, .username)
+    type = c.lenient(String.self, .type)
     mediaProgress = (c.lenient([Lossy<ABSProgress>].self, .mediaProgress) ?? []).compactMap(\.value)
   }
 }
@@ -429,4 +435,156 @@ struct ABSLoginResponse: Decodable {
   }
   let user: User
   let userDefaultLibraryId: String?
+}
+
+// MARK: - Hörstatistik
+
+struct ABSUser: Decodable, Identifiable, Hashable {
+  let id: String
+  let username: String
+  let type: String?
+  let isActive: Bool?
+}
+
+struct ABSUsersResponse: Decodable { let users: [ABSUser] }
+
+struct ABSListeningStats: Decodable {
+  struct Item: Identifiable, Hashable {
+    let id: String
+    let timeListening: Double
+    let title: String
+    let author: String
+  }
+
+  struct Session: Decodable, Identifiable, Hashable {
+    let id: String
+    let libraryItemId: String
+    let displayTitle: String
+    let displayAuthor: String
+    let timeListening: Double
+    let startedAt: Date
+    let updatedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+      case id, libraryItemId, displayTitle, displayAuthor, timeListening, startedAt, updatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      id = try c.decode(String.self, forKey: .id)
+      libraryItemId = c.lenient(String.self, .libraryItemId) ?? ""
+      displayTitle = c.lenient(String.self, .displayTitle) ?? ""
+      displayAuthor = c.lenient(String.self, .displayAuthor) ?? ""
+      timeListening = c.lenient(Double.self, .timeListening) ?? 0
+      startedAt = Date(timeIntervalSince1970: (c.lenient(Double.self, .startedAt) ?? 0) / 1000)
+      updatedAt = Date(timeIntervalSince1970: (c.lenient(Double.self, .updatedAt) ?? 0) / 1000)
+    }
+  }
+
+  private struct RawItem: Decodable {
+    let id: String?
+    let timeListening: Double?
+    let mediaMetadata: ABSMetadata?
+  }
+
+  let totalTime: Double
+  let today: Double
+  /// "yyyy-MM-dd" → Sekunden
+  let days: [String: Double]
+  /// "Monday" … → Sekunden
+  let dayOfWeek: [String: Double]
+  let items: [Item]
+  let recentSessions: [Session]
+
+  enum CodingKeys: String, CodingKey { case totalTime, today, days, dayOfWeek, items, recentSessions }
+
+  init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    totalTime = c.lenient(Double.self, .totalTime) ?? 0
+    today = c.lenient(Double.self, .today) ?? 0
+    days = c.lenient([String: Double].self, .days) ?? [:]
+    dayOfWeek = c.lenient([String: Double].self, .dayOfWeek) ?? [:]
+    let raw = c.lenient([String: Lossy<RawItem>].self, .items) ?? [:]
+    items = raw.compactMap { key, value in
+      guard let v = value.value else { return nil }
+      return Item(id: v.id ?? key, timeListening: v.timeListening ?? 0,
+                  title: v.mediaMetadata?.title ?? "Unbekannt",
+                  author: v.mediaMetadata?.displayAuthor ?? "")
+    }
+    .sorted { $0.timeListening > $1.timeListening }
+    recentSessions = (c.lenient([Lossy<Session>].self, .recentSessions) ?? []).compactMap(\.value)
+  }
+
+  // MARK: Auswertungen
+
+  struct DayValue: Identifiable, Hashable {
+    let date: Date
+    let seconds: Double
+    var id: Date { date }
+  }
+
+  struct WeekdayValue: Identifiable, Hashable {
+    let name: String
+    let seconds: Double
+    var id: String { name }
+  }
+
+  static let dayKey: DateFormatter = {
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "en_US_POSIX")
+    f.calendar = Calendar(identifier: .gregorian)
+    f.dateFormat = "yyyy-MM-dd"
+    return f
+  }()
+
+  func seconds(on date: Date) -> Double { days[Self.dayKey.string(from: date)] ?? 0 }
+
+  /// Hörzeit der letzten n Tage (inkl. heute), älteste zuerst
+  func lastDays(_ n: Int) -> [DayValue] {
+    let cal = Calendar.current
+    let today = cal.startOfDay(for: Date())
+    return (0 ..< n).reversed().compactMap { offset in
+      cal.date(byAdding: .day, value: -offset, to: today).map { DayValue(date: $0, seconds: seconds(on: $0)) }
+    }
+  }
+
+  /// Hörzeit pro Monat der letzten n Monate
+  func lastMonths(_ n: Int) -> [DayValue] {
+    let cal = Calendar.current
+    let start = cal.date(from: cal.dateComponents([.year, .month], from: Date())) ?? Date()
+    var sums: [Date: Double] = [:]
+    for (k, v) in days {
+      guard let d = Self.dayKey.date(from: k),
+            let m = cal.date(from: cal.dateComponents([.year, .month], from: d)) else { continue }
+      sums[m, default: 0] += v
+    }
+    return (0 ..< n).reversed().compactMap { offset in
+      cal.date(byAdding: .month, value: -offset, to: start).map { DayValue(date: $0, seconds: sums[$0] ?? 0) }
+    }
+  }
+
+  var thisWeek: Double { lastDays(7).reduce(0) { $0 + $1.seconds } }
+
+  /// Tage am Stück mit mindestens einer Minute Hörzeit (heute darf noch fehlen)
+  var streak: Int {
+    let cal = Calendar.current
+    var day = cal.startOfDay(for: Date())
+    if seconds(on: day) < 60 { day = cal.date(byAdding: .day, value: -1, to: day) ?? day }
+    var count = 0
+    while seconds(on: day) >= 60 {
+      count += 1
+      guard let prev = cal.date(byAdding: .day, value: -1, to: day) else { break }
+      day = prev
+    }
+    return count
+  }
+
+  var activeDays: Int { days.values.filter { $0 >= 60 }.count }
+
+  /// Wochentage Mo–So mit deutschen Kurznamen
+  var weekdays: [WeekdayValue] {
+    let order = [("Monday", "Mo"), ("Tuesday", "Di"), ("Wednesday", "Mi"), ("Thursday", "Do"),
+                 ("Friday", "Fr"), ("Saturday", "Sa"), ("Sunday", "So")]
+    return order.map { WeekdayValue(name: $0.1, seconds: dayOfWeek[$0.0] ?? 0) }
+  }
 }

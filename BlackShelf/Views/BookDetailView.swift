@@ -101,7 +101,7 @@ struct BookDetailView: View {
   private var header: some View {
     Section {
       VStack(spacing: 10) {
-        BookCover(itemId: item.id, cornerRadius: 14, width: 800)
+        BookCover(item: item, cornerRadius: 14, width: 800)
           .frame(maxWidth: 260)
           .shadow(color: .black.opacity(0.2), radius: 16, y: 8)
           .padding(.bottom, 6)

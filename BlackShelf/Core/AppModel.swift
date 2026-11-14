@@ -9,6 +9,9 @@ final class AppModel {
   private(set) var libraries: [ABSLibrary] = []
   private(set) var progress: [String: ABSProgress] = [:]
   private(set) var username: String?
+  private(set) var userId: String?
+  private(set) var userType: String?
+  var isAdmin: Bool { userType == "root" || userType == "admin" }
   var loadError: String?
 
   /// Wird erhöht, wenn sich Bibliothek oder Fortschritt ändern – Listen laden dann neu
@@ -57,6 +60,8 @@ final class AppModel {
   func refreshProgress() async {
     guard let me = try? await client.me() else { return }
     username = me.username
+    userId = me.id
+    userType = me.type
     progress = Dictionary(me.mediaProgress.filter { $0.episodeId == nil }.map { ($0.libraryItemId, $0) },
                           uniquingKeysWith: { a, b in (a.lastUpdate ?? 0) > (b.lastUpdate ?? 0) ? a : b })
     revision += 1

@@ -29,7 +29,7 @@ struct SearchView: View {
                 Label {
                   Text(s.name)
                 } icon: {
-                  BookCover(itemId: s.books.first?.id, cornerRadius: 4, width: 120).frame(width: 32)
+                  BookCover(item: s.books.first, cornerRadius: 4, width: 120).frame(width: 32)
                 }
               }
             }

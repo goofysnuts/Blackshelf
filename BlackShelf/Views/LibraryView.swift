@@ -373,7 +373,7 @@ struct CollectionsList: View {
     List(collections) { c in
       NavigationLink(value: Route.collection(c)) {
         HStack(spacing: 12) {
-          BookCover(itemId: c.books.first?.id, cornerRadius: 6, width: 160).frame(width: 56)
+          BookCover(item: c.books.first, cornerRadius: 6, width: 160).frame(width: 56)
           VStack(alignment: .leading, spacing: 2) {
             Text(c.name)
             Text(c.books.count == 1 ? "1 Buch" : "\(c.books.count) Bücher")

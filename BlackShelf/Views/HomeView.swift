@@ -7,6 +7,7 @@ struct HomeView: View {
   @State private var loading = false
   @State private var error: String?
   @State private var showSettings = false
+  @State private var stats: ABSListeningStats?
 
   private var continueShelf: ABSShelf? { shelves.first { $0.id == "continue-listening" } }
   private var otherShelves: [ABSShelf] {
@@ -19,6 +20,10 @@ struct HomeView: View {
         LazyVStack(alignment: .leading, spacing: 28) {
           if let c = continueShelf, !c.items.isEmpty {
             ContinueListeningSection(items: c.items)
+          }
+          if let stats, stats.totalTime > 0 {
+            StatsSummaryCard(stats: stats)
+              .padding(.horizontal)
           }
           ForEach(otherShelves) { shelf in
             ShelfSection(shelf: shelf)
@@ -74,12 +79,15 @@ struct HomeView: View {
     guard let lib = app.libraryId else { return }
     loading = true
     defer { loading = false }
+    async let statsTask = try? ABSClient.shared.listeningStats()
     do {
       shelves = try await ABSClient.shared.personalized(lib)
       error = nil
     } catch {
       if shelves.isEmpty { self.error = error.localizedDescription }
     }
+    let fetchedStats = await statsTask
+    if let fetchedStats { stats = fetchedStats }
   }
 }
 
@@ -136,7 +144,7 @@ struct ContinueCard: View {
     let remaining = max(0, (p?.duration ?? item.duration) - (p?.currentTime ?? 0))
     NavigationLink(value: Route.book(item)) {
       VStack(alignment: .leading, spacing: 8) {
-        BookCover(itemId: item.id, cornerRadius: 12, progress: p?.progress, width: 500)
+        BookCover(item: item, cornerRadius: 12, progress: p?.progress, width: 500)
           .frame(width: 220)
           .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
         HStack(alignment: .top) {
@@ -213,12 +221,12 @@ struct SeriesTile: View {
       ZStack {
         // gestapelte Cover deuten die Reihe an
         if series.books.count > 1 {
-          BookCover(itemId: series.books[1].id, width: 300)
+          BookCover(item: series.books[1], width: 300)
             .scaleEffect(0.9)
             .offset(x: 8, y: -8)
             .opacity(0.6)
         }
-        BookCover(itemId: series.books.first?.id, width: 300)
+        BookCover(item: series.books.first, width: 300)
       }
       VStack(alignment: .leading, spacing: 1) {
         Text(series.name).font(.subheadline.weight(.medium)).lineLimit(2)

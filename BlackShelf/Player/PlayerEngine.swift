@@ -106,7 +106,7 @@ final class PlayerEngine {
     chapters = newItem.media.chapters ?? []
     duration = newItem.duration
     currentTime = start ?? app?.progress(for: newItem.id)?.currentTime ?? 0
-    loadArtwork(for: newItem.id)
+    loadArtwork(for: newItem)
 
     do {
       let s = try await client.startPlayback(newItem.id)
@@ -147,7 +147,7 @@ final class PlayerEngine {
     chapters = it.media.chapters ?? []
     duration = it.duration
     currentTime = it.userMediaProgress?.currentTime ?? app?.progress(for: id)?.currentTime ?? 0
-    loadArtwork(for: id)
+    loadArtwork(for: it)
     updateNowPlaying()
   }
 
@@ -529,9 +529,10 @@ final class PlayerEngine {
     rc.skipForwardCommand.preferredIntervals = [NSNumber(value: skipForwardInterval)]
   }
 
-  private func loadArtwork(for itemId: String) {
+  private func loadArtwork(for book: ABSItem) {
     artwork = nil
-    guard let url = client.coverURL(itemId, width: 600) else { return }
+    let itemId = book.id
+    guard let url = AudibleCovers.shared.url(for: book, width: 1024) else { return }
     Task {
       guard let result = try? await URLSession.shared.data(from: url),
             let image = UIImage(data: result.0), item?.id == itemId else { return }

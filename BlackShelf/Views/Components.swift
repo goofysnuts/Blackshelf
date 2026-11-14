@@ -106,15 +106,14 @@ struct SquareArtwork<Placeholder: View>: View {
 
 /// Quadratisches Hörbuch-Cover mit optionalem Fortschrittsbalken
 struct BookCover: View {
-  let itemId: String?
-  var url: URL? = nil
+  let item: ABSItem?
   var cornerRadius: CGFloat = 8
   var progress: Double? = nil
   var finished = false
   var width = 400
 
   var body: some View {
-    SquareArtwork(url: url ?? itemId.flatMap { ABSClient.shared.coverURL($0, width: width) }) {
+    SquareArtwork(url: item.flatMap { AudibleCovers.shared.url(for: $0, width: width) }) {
       ZStack {
         Rectangle().fill(.quaternary)
         Image(systemName: "book.closed.fill")
@@ -144,6 +143,9 @@ struct BookCover: View {
       }
     }
     .accessibilityHidden(progress == nil && !finished)
+    .task(id: item?.id) {
+      if let item { AudibleCovers.shared.resolveIfNeeded(item) }
+    }
   }
 }
 
@@ -173,7 +175,7 @@ struct BookTile: View {
   var body: some View {
     let p = app.progress(for: item.id)
     VStack(alignment: .leading, spacing: 6) {
-      BookCover(itemId: item.id, progress: p?.progress, finished: p?.isFinished ?? false, width: 300)
+      BookCover(item: item, progress: p?.progress, finished: p?.isFinished ?? false, width: 300)
       VStack(alignment: .leading, spacing: 1) {
         Text(item.title)
           .font(.subheadline.weight(.medium))
@@ -197,7 +199,7 @@ struct BookRow: View {
   var body: some View {
     let p = app.progress(for: item.id)
     HStack(spacing: 12) {
-      BookCover(itemId: item.id, cornerRadius: 6, finished: p?.isFinished ?? false, width: 160)
+      BookCover(item: item, cornerRadius: 6, finished: p?.isFinished ?? false, width: 160)
         .frame(width: 56)
       VStack(alignment: .leading, spacing: 2) {
         Text(item.title).font(.body).lineLimit(2)
@@ -267,6 +269,8 @@ enum Route: Hashable {
   case collection(ABSCollection)
   case requestBook(String)
   case findInLibrary(title: String, author: String)
+  case bookId(String)
+  case stats
 }
 
 extension View {
@@ -280,6 +284,8 @@ extension View {
       case let .collection(c): CollectionView(collection: c)
       case let .requestBook(id): RequestBookDetailView(bookId: id)
       case let .findInLibrary(title, author): FindInLibraryView(title: title, author: author)
+      case let .bookId(id): BookLoaderView(itemId: id)
+      case .stats: StatsView()
       }
     }
   }

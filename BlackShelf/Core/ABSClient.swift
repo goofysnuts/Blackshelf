@@ -279,6 +279,18 @@ final class ABSClient {
                    body: ["currentTime": currentTime, "timeListened": timeListened, "duration": duration])
   }
 
+  /// Hörstatistik: eigene (userId nil) oder – als Admin – die eines anderen Nutzers
+  func listeningStats(userId: String? = nil) async throws -> ABSListeningStats {
+    if let userId { return try await get("/api/users/\(userId)/listening-stats") }
+    return try await get("/api/me/listening-stats")
+  }
+
+  /// Alle Nutzer (nur für Admins)
+  func users() async throws -> [ABSUser] {
+    let r: ABSUsersResponse = try await get("/api/users")
+    return r.users.sorted { $0.username.localizedCaseInsensitiveCompare($1.username) == .orderedAscending }
+  }
+
   func setFinished(_ itemId: String, _ finished: Bool) async throws {
     try await fire("/api/me/progress/\(itemId)", method: "PATCH", body: ["isFinished": finished])
   }
