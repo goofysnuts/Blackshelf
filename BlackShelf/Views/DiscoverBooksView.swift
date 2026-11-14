@@ -92,6 +92,8 @@ struct DiscoverBooksView: View {
 struct DiscoverBookCard: View {
   let book: BBRBook
   var showDate = false
+  /// „In der Bibliothek“ kennzeichnen (Empfehlungen auf der Buchseite)
+  var showLibraryBadge = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
@@ -99,7 +101,15 @@ struct DiscoverBookCard: View {
         .frame(width: 140, height: 140)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(alignment: .bottomLeading) {
-          if let r = book.request {
+          if showLibraryBadge, book.inLibrary == true {
+            Label("In Bibliothek", systemImage: "checkmark.circle.fill")
+              .font(.caption2.weight(.semibold))
+              .foregroundStyle(.green)
+              .padding(.horizontal, 6)
+              .padding(.vertical, 3)
+              .background(.ultraThinMaterial, in: Capsule())
+              .padding(6)
+          } else if let r = book.request {
             StatusBadge(status: r.status, progress: r.progress)
               .font(.caption2)
               .padding(.horizontal, 6)
@@ -117,6 +127,11 @@ struct DiscoverBookCard: View {
           .font(.caption)
           .foregroundStyle(.secondary)
           .lineLimit(1)
+        if showLibraryBadge, book.inLibrary != true, book.request == nil {
+          Text("Anfragen")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.tint)
+        }
         if showDate, let d = book.releasedDate {
           Text(d, format: .dateTime.day().month(.abbreviated))
             .font(.caption2)

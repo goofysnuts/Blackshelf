@@ -9,31 +9,30 @@ struct HomeView: View {
   @State private var showSettings = false
   @State private var stats: ABSListeningStats?
   @State private var bookOfDay: ABSItem?
+  @State private var showEditor = false
+  @AppStorage(HomeLayout.orderKey) private var orderRaw = ""
+  @AppStorage(HomeLayout.hiddenKey) private var hiddenRaw = ""
 
-  private var continueShelf: ABSShelf? { shelves.first { $0.id == "continue-listening" } }
-  private var otherShelves: [ABSShelf] {
-    shelves.filter { $0.id != "continue-listening" && (!$0.items.isEmpty || !$0.series.isEmpty || !$0.authors.isEmpty) }
+  private var filledShelves: [ABSShelf] {
+    shelves.filter { !$0.items.isEmpty || !$0.series.isEmpty || !$0.authors.isEmpty }
+  }
+
+  /// Abschnitte in eingestellter Reihenfolge, ohne ausgeblendete und leere
+  private var sectionIDs: [String] {
+    let hidden = Set(HomeLayout.decode(hiddenRaw))
+    let available = Set(filledShelves.map(\.id))
+      .union(bookOfDay != nil ? ["book-of-day"] : [])
+      .union((stats?.totalTime ?? 0) > 0 ? ["stats"] : [])
+    return HomeLayout.ordered(orderRaw, including: filledShelves.map(\.id))
+      .filter { available.contains($0) && !hidden.contains($0) }
   }
 
   var body: some View {
     NavigationStack {
       ScrollView {
         LazyVStack(alignment: .leading, spacing: 28) {
-          if let c = continueShelf, !c.items.isEmpty {
-            ContinueListeningSection(items: c.items)
-          }
-          if let bookOfDay {
-            BookOfTheDayCard(item: bookOfDay) {
-              Task { await loadBookOfDay(forceNew: true) }
-            }
-            .padding(.horizontal)
-          }
-          if let stats, stats.totalTime > 0 {
-            StatsSummaryCard(stats: stats)
-              .padding(.horizontal)
-          }
-          ForEach(otherShelves) { shelf in
-            ShelfSection(shelf: shelf)
+          ForEach(sectionIDs, id: \.self) { id in
+            section(id)
           }
         }
         .padding(.vertical)
@@ -62,10 +61,21 @@ struct HomeView: View {
           ToolbarItem(placement: .topBarLeading) { LibraryMenu() }
         }
         ToolbarItem(placement: .topBarTrailing) {
-          Button { showSettings = true } label: {
+          Menu {
+            Button { showEditor = true } label: {
+              Label("Startseite anpassen", systemImage: "rectangle.3.group")
+            }
+            NavigationLink(value: Route.stats) {
+              Label("Hörstatistik", systemImage: "chart.bar")
+            }
+            Divider()
+            Button { showSettings = true } label: {
+              Label("Einstellungen", systemImage: "gearshape")
+            }
+          } label: {
             Image(systemName: "person.crop.circle")
           }
-          .accessibilityLabel("Einstellungen")
+          .accessibilityLabel("Konto und Einstellungen")
         }
       }
       .refreshable {
@@ -78,6 +88,14 @@ struct HomeView: View {
         if !playing { Task { try? await Task.sleep(nanoseconds: 1_500_000_000); await load() } }
       }
       .sheet(isPresented: $showSettings) { SettingsView() }
+      .sheet(isPresented: $showEditor) {
+        NavigationStack {
+          HomeEditView()
+            .toolbar {
+              ToolbarItem(placement: .confirmationAction) { Button("Fertig") { showEditor = false } }
+            }
+        }
+      }
       .appDestinations()
     }
   }
@@ -100,6 +118,36 @@ struct HomeView: View {
 }
 
 extension HomeView {
+  @ViewBuilder func section(_ id: String) -> some View {
+    switch id {
+    case "continue-listening":
+      if let c = shelves.first(where: { $0.id == id }) {
+        ContinueListeningSection(items: c.items)
+      }
+    case "book-of-day":
+      if let bookOfDay {
+        VStack(alignment: .leading, spacing: 10) {
+          Text("Hörbuch des Tages")
+            .font(.title3.bold())
+            .accessibilityAddTraits(.isHeader)
+          BookOfTheDayCard(item: bookOfDay) {
+            Task { await loadBookOfDay(forceNew: true) }
+          }
+        }
+        .padding(.horizontal)
+      }
+    case "stats":
+      if let stats {
+        StatsSummaryCard(stats: stats)
+          .padding(.horizontal)
+      }
+    default:
+      if let shelf = shelves.first(where: { $0.id == id }) {
+        ShelfSection(shelf: shelf)
+      }
+    }
+  }
+
   /// Ein zufälliges, noch nicht begonnenes Hörbuch – bleibt den ganzen Tag gleich
   func loadBookOfDay(forceNew: Bool = false) async {
     guard let lib = app.libraryId else { return }
@@ -156,9 +204,6 @@ struct BookOfTheDayCard: View {
         BookCover(item: item, cornerRadius: 0, width: 500)
           .frame(width: min(height, 200), height: min(height, 200))
         VStack(alignment: .leading, spacing: 2) {
-          Text("Hörbuch des Tages")
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
           Text(item.title)
             .font(.title3.bold())
             .lineLimit(2)
@@ -166,6 +211,12 @@ struct BookOfTheDayCard: View {
             .font(.subheadline)
             .foregroundStyle(.secondary)
             .lineLimit(1)
+          if let n = item.media.metadata.displayNarrator {
+            Text("Gelesen von \(n)")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .lineLimit(1)
+          }
           Spacer(minLength: 4)
           HStack(alignment: .center) {
             Text(item.media.metadata.displaySeries ?? (item.duration > 0 ? Fmt.duration(item.duration) : ""))

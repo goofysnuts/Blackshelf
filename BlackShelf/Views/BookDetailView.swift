@@ -7,6 +7,8 @@ struct BookDetailView: View {
   @State private var full: ABSItem?
   @State private var showFullDescription = false
   @State private var confirmReset = false
+  @State private var showAllChapters = false
+  @State private var recommendations: [BBRSection] = []
 
   private var book: ABSItem { full ?? item }
   private var meta: ABSMetadata { book.media.metadata }
@@ -53,7 +55,8 @@ struct BookDetailView: View {
 
       if let chapters = book.media.chapters, chapters.count > 1 {
         Section("Kapitel (\(chapters.count))") {
-          ForEach(chapters) { c in
+          // lange Kapitellisten gekürzt, damit die Empfehlungen erreichbar bleiben
+          ForEach(showAllChapters ? chapters : Array(chapters.prefix(6))) { c in
             Button {
               Task { await player.play(book, from: c.start) }
             } label: {
@@ -62,6 +65,24 @@ struct BookDetailView: View {
             }
             .foregroundStyle(.primary)
           }
+          if chapters.count > 6 {
+            Button(showAllChapters ? "Weniger anzeigen" : "Alle \(chapters.count) Kapitel anzeigen") {
+              withAnimation { showAllChapters.toggle() }
+            }
+          }
+        }
+      }
+
+      ForEach(recommendations) { section in
+        Section {
+          RecommendationRow(books: section.items)
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
+        } header: {
+          Text(section.title)
+            .font(.title3.bold())
+            .foregroundStyle(.primary)
+            .textCase(nil)
         }
       }
     }
@@ -94,6 +115,12 @@ struct BookDetailView: View {
       Text("Das Hörbuch beginnt dann wieder am Anfang.")
     }
     .task { full = try? await ABSClient.shared.item(item.id) }
+    .task(id: item.id) {
+      guard BlackboxConfig.isConfigured else { return }
+      if let r = try? await BlackboxClient().similar(toLibraryItem: item.id) {
+        withAnimation { recommendations = r }
+      }
+    }
   }
 
   // MARK: Kopfbereich
@@ -240,5 +267,33 @@ struct ChapterRow: View {
     .contentShape(Rectangle())
     .accessibilityElement(children: .combine)
     .accessibilityAddTraits(isCurrent ? .isSelected : [])
+  }
+}
+
+
+/// Waagrechte Reihe empfohlener Hörbücher: vorhandene öffnen das Buch, fehlende die Anfrage-Seite
+struct RecommendationRow: View {
+  let books: [BBRBook]
+
+  var body: some View {
+    ScrollView(.horizontal, showsIndicators: false) {
+      LazyHStack(alignment: .top, spacing: 14) {
+        ForEach(books) { b in
+          NavigationLink(value: destination(b)) {
+            DiscoverBookCard(book: b, showLibraryBadge: true)
+          }
+          .buttonStyle(.plain)
+        }
+      }
+      .scrollTargetLayout()
+      .padding(.horizontal, 20)
+      .padding(.vertical, 6)
+    }
+    .scrollTargetBehavior(.viewAligned)
+  }
+
+  private func destination(_ b: BBRBook) -> Route {
+    if b.inLibrary == true, let id = b.libraryId { return .bookId(id) }
+    return .requestBook(b.id)
   }
 }

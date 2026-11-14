@@ -351,7 +351,9 @@ struct ABSShelf: Decodable, Identifiable {
   }
 
   /// Deutsche Bezeichnungen für die bekannten Regale
-  var germanLabel: String {
+  var germanLabel: String { Self.germanLabel(id: id, fallback: label) }
+
+  static func germanLabel(id: String, fallback: String) -> String {
     switch id {
     case "continue-listening": return "Weiterhören"
     case "continue-series": return "Serie fortsetzen"
@@ -361,7 +363,7 @@ struct ABSShelf: Decodable, Identifiable {
     case "listen-again": return "Nochmal hören"
     case "newest-authors": return "Neue Autoren"
     case "episodes-recently-added": return "Neue Folgen"
-    default: return label
+    default: return fallback
     }
   }
 }

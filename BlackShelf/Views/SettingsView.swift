@@ -19,6 +19,11 @@ struct SettingsView: View {
           NavigationLink(value: Route.stats) {
             Label("Hörstatistik", systemImage: "chart.bar.fill")
           }
+          NavigationLink {
+            HomeEditView()
+          } label: {
+            Label("Startseite anpassen", systemImage: "rectangle.3.group")
+          }
         }
 
         Section("Audiobookshelf") {
@@ -46,12 +51,28 @@ struct SettingsView: View {
 
         Section {
           Toggle("Cover von Audible", isOn: $covers.enabled)
-          Button("Cover neu suchen") { AudibleCovers.shared.reset() }
-            .disabled(!covers.enabled)
+          Button {
+            covers.reset()
+          } label: {
+            HStack {
+              Label("Cover neu suchen", systemImage: "arrow.triangle.2.circlepath")
+              Spacer()
+              if covers.isBusy { ProgressView() }
+            }
+          }
+          .disabled(!covers.enabled || covers.isBusy)
+          .sensoryFeedback(.success, trigger: covers.rebuilding) { old, new in old && !new }
+          if covers.enabled, let status = covers.statusText {
+            Text(status)
+              .font(.footnote)
+              .foregroundStyle(.secondary)
+              .contentTransition(.numericText())
+              .animation(.default, value: status)
+          }
         } header: {
           Text("Darstellung")
         } footer: {
-          Text("Zeigt statt der Cover aus Audiobookshelf die offiziellen Audible-Cover, sofern das Buch dort gefunden wird.")
+          Text("Zeigt statt der Cover aus Audiobookshelf die offiziellen Audible-Cover. Mit Blackbox Request ordnet der Server die Cover zu – dieselbe Quelle wie bei angefragten Büchern.")
         }
 
         Section {
@@ -77,6 +98,7 @@ struct SettingsView: View {
         }
       }
       .navigationTitle("Einstellungen")
+      .task { AudibleCovers.shared.refreshFromServer() }
       .appDestinations()
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {

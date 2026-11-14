@@ -39,7 +39,7 @@ struct LibraryView: View {
         if app.bookLibraries.count > 1 {
           ToolbarItem(placement: .topBarLeading) { LibraryMenu() }
         }
-        if section == .books || section == .series {
+        if section != .authors {
           ToolbarItem(placement: .topBarTrailing) {
             Button {
               withAnimation { layout = layout == .grid ? .list : .grid }
@@ -427,10 +427,45 @@ struct AuthorView: View {
 
 struct CollectionsList: View {
   @Environment(AppModel.self) private var app
+  @AppStorage("library.layout") private var layout: LibraryLayout = .grid
   @State private var collections: [ABSCollection] = []
   @State private var loading = false
 
+  private let columns = [GridItem(.adaptive(minimum: 104, maximum: 180), spacing: 14, alignment: .top)]
+
   var body: some View {
+    content
+    .overlay {
+      if collections.isEmpty {
+        if loading { ProgressView() } else {
+          ContentUnavailableView("Keine Sammlungen", systemImage: "rectangle.stack",
+                                 description: Text("Sammlungen legst du in Audiobookshelf an."))
+        }
+      }
+    }
+    .refreshable { await load() }
+    .task(id: app.libraryId) { await load() }
+  }
+
+  @ViewBuilder private var content: some View {
+    if layout == .grid {
+      ScrollView {
+        LazyVGrid(columns: columns, spacing: 18) {
+          ForEach(collections) { c in
+            NavigationLink(value: Route.collection(c)) {
+              CollectionTile(collection: c)
+            }
+            .buttonStyle(.plain)
+          }
+        }
+        .padding()
+      }
+    } else {
+      list
+    }
+  }
+
+  private var list: some View {
     List(collections) { c in
       NavigationLink(value: Route.collection(c)) {
         HStack(spacing: 12) {
@@ -444,16 +479,6 @@ struct CollectionsList: View {
       }
     }
     .listStyle(.plain)
-    .overlay {
-      if collections.isEmpty {
-        if loading { ProgressView() } else {
-          ContentUnavailableView("Keine Sammlungen", systemImage: "rectangle.stack",
-                                 description: Text("Sammlungen legst du in Audiobookshelf an."))
-        }
-      }
-    }
-    .refreshable { await load() }
-    .task(id: app.libraryId) { await load() }
   }
 
   private func load() async {
@@ -461,6 +486,43 @@ struct CollectionsList: View {
     loading = true
     defer { loading = false }
     collections = (try? await ABSClient.shared.collections(lib)) ?? collections
+  }
+}
+
+/// Kachel einer Sammlung: Collage aus bis zu vier Covern
+struct CollectionTile: View {
+  let collection: ABSCollection
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Group {
+        if collection.books.count >= 4 {
+          Grid(horizontalSpacing: 2, verticalSpacing: 2) {
+            GridRow {
+              BookCover(item: collection.books[0], cornerRadius: 0, width: 200)
+              BookCover(item: collection.books[1], cornerRadius: 0, width: 200)
+            }
+            GridRow {
+              BookCover(item: collection.books[2], cornerRadius: 0, width: 200)
+              BookCover(item: collection.books[3], cornerRadius: 0, width: 200)
+            }
+          }
+          .aspectRatio(1, contentMode: .fit)
+        } else {
+          BookCover(item: collection.books.first, cornerRadius: 0, width: 300)
+        }
+      }
+      .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+      VStack(alignment: .leading, spacing: 1) {
+        Text(collection.name)
+          .font(.subheadline.weight(.medium))
+          .lineLimit(2)
+        Text(collection.books.count == 1 ? "1 Buch" : "\(collection.books.count) Bücher")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+    }
+    .accessibilityElement(children: .combine)
   }
 }
 

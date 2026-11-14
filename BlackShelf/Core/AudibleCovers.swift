@@ -21,6 +21,14 @@ final class AudibleCovers {
   /// Server liefert Cover → keine eigene Suche mehr (die ist ungenauer)
   private(set) var serverActive: Bool = UserDefaults.standard.bool(forKey: "covers.server.active")
   @ObservationIgnored private var serverTask: Task<Void, Never>?
+  /// Stand der Zuordnung auf dem Server (für die Anzeige in den Einstellungen)
+  private(set) var serverJob: BlackboxClient.CoverJob?
+  /// Neusuche wurde gerade ausgelöst
+  private(set) var rebuilding = false
+  /// Rückmeldung nach „Cover neu suchen“
+  private(set) var rebuildMessage: String?
+
+  var isBusy: Bool { rebuilding || serverJob?.running == true }
 
   @ObservationIgnored private var running: [String: Task<Void, Never>] = [:]
   @ObservationIgnored private var slots = 4
@@ -65,11 +73,46 @@ final class AudibleCovers {
     }
   }
 
-  /// Alle gemerkten Treffer verwerfen (z. B. nach falschem Cover)
+  /// „Cover neu suchen“: lokale Treffer verwerfen und – mit Blackbox Request – die Zuordnung auf dem Server neu starten
   func reset() {
     map = [:]
+    running = [:]
     UserDefaults.standard.removeObject(forKey: "covers.audible.map")
-    refreshFromServer()
+    rebuildMessage = nil
+    guard BlackboxConfig.isConfigured else {
+      rebuildMessage = "Cover werden beim Anzeigen neu gesucht."
+      return
+    }
+    rebuilding = true
+    Task {
+      do {
+        try await BlackboxClient().rebuildCovers()
+        rebuildMessage = nil
+      } catch {
+        // ohne Admin-Recht: nur fehlende Bücher werden zugeordnet
+        rebuildMessage = "Neue Bücher werden zugeordnet. Eine komplette Neusuche kann nur ein Admin starten."
+      }
+      try? await Task.sleep(nanoseconds: 700_000_000)
+      rebuilding = false
+      refreshFromServer()
+    }
+  }
+
+  /// Text für die Einstellungen
+  var statusText: String? {
+    if let j = serverJob {
+      if let e = j.error, !e.isEmpty { return "Fehler: \(e)" }
+      if j.running {
+        if let d = j.done, let t = j.total, t > 0 { return "Suche läuft … \(d) von \(t) Büchern" }
+        return "Suche läuft …"
+      }
+      if rebuilding { return "Suche wird gestartet …" }
+      if let msg = rebuildMessage { return msg }
+      let found = serverMap.values.filter { !$0.isEmpty }.count
+      if !serverMap.isEmpty { return "\(found) von \(serverMap.count) Büchern haben ein Audible-Cover." }
+    }
+    if rebuilding { return "Suche wird gestartet …" }
+    return rebuildMessage
   }
 
   /// Cover-Zuordnung von Blackbox Request laden; solange der Server noch zuordnet, alle 10 s nachladen
@@ -77,16 +120,17 @@ final class AudibleCovers {
     guard enabled, BlackboxConfig.isConfigured, serverTask == nil else { return }
     serverTask = Task {
       defer { serverTask = nil }
-      for _ in 0 ..< 60 {
-        guard let r = try? await BlackboxClient().libraryCovers() else { return }
+      for _ in 0 ..< 400 {
+        guard !Task.isCancelled, let r = try? await BlackboxClient().libraryCovers() else { return }
+        serverJob = r.job
         if !r.covers.isEmpty || !serverActive {
           serverMap = r.covers
           serverActive = true
           UserDefaults.standard.set(r.covers, forKey: "covers.server.map")
           UserDefaults.standard.set(true, forKey: "covers.server.active")
         }
-        guard r.running else { return }
-        try? await Task.sleep(nanoseconds: 10_000_000_000)
+        guard r.job.running else { return }
+        try? await Task.sleep(nanoseconds: 3_000_000_000)
       }
     }
   }
