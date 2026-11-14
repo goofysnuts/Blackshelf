@@ -28,8 +28,6 @@
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
-		<key>NSAllowsLocalNetworking</key>
-		<true/>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>BlackShelf verbindet sich mit deinem Audiobookshelf- und Blackbox-Request-Server im Heimnetz.</string>
