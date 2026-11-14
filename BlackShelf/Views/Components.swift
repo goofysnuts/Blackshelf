@@ -61,6 +61,49 @@ struct RemoteImage<Placeholder: View>: View {
   }
 }
 
+/// Quadratische Fläche für Cover. Nicht-quadratische Cover werden vollständig gezeigt
+/// (eingepasst) und mit einer unscharfen Version ihrer selbst hinterlegt – so überlappt nichts
+/// und es wird kein Titeltext abgeschnitten.
+struct SquareArtwork<Placeholder: View>: View {
+  let url: URL?
+  @ViewBuilder var placeholder: () -> Placeholder
+  @State private var image: UIImage?
+
+  var body: some View {
+    Color.clear
+      .aspectRatio(1, contentMode: .fit)
+      .overlay {
+        if let image {
+          let ratio = image.size.width / max(image.size.height, 1)
+          if abs(ratio - 1) < 0.04 {
+            Image(uiImage: image).resizable().scaledToFill()
+          } else {
+            ZStack {
+              Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .blur(radius: 20, opaque: true)
+                .overlay(Color.black.opacity(0.25))
+              Image(uiImage: image)
+                .resizable()
+                .scaledToFit()
+                .shadow(color: .black.opacity(0.35), radius: 6)
+            }
+          }
+        } else {
+          placeholder()
+        }
+      }
+      .clipped()
+      .task(id: url) {
+        guard let url else { image = nil; return }
+        if let c = ImageCache.shared.cached(url) { image = c; return }
+        let loaded = await ImageCache.shared.load(url)
+        withAnimation(.easeOut(duration: 0.2)) { image = loaded }
+      }
+  }
+}
+
 /// Quadratisches Hörbuch-Cover mit optionalem Fortschrittsbalken
 struct BookCover: View {
   let itemId: String?
@@ -71,7 +114,7 @@ struct BookCover: View {
   var width = 400
 
   var body: some View {
-    RemoteImage(url: url ?? itemId.flatMap { ABSClient.shared.coverURL($0, width: width) }) {
+    SquareArtwork(url: url ?? itemId.flatMap { ABSClient.shared.coverURL($0, width: width) }) {
       ZStack {
         Rectangle().fill(.quaternary)
         Image(systemName: "book.closed.fill")
@@ -79,7 +122,6 @@ struct BookCover: View {
           .foregroundStyle(.secondary)
       }
     }
-    .aspectRatio(1, contentMode: .fit)
     .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     .overlay {
       RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)

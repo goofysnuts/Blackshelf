@@ -187,7 +187,7 @@ struct RequestCover: View {
   let url: String?
 
   var body: some View {
-    RemoteImage(url: url.flatMap(URL.init(string:))) {
+    SquareArtwork(url: url.flatMap(URL.init(string:))) {
       ZStack {
         Rectangle().fill(.quaternary)
         Image(systemName: "book.closed").foregroundStyle(.secondary)
