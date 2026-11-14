@@ -1,0 +1,38 @@
+name: BlackShelf
+options:
+  bundleIdPrefix: de.jannes
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+targets:
+  BlackShelf:
+    type: application
+    platform: iOS
+    sources:
+      - path: BlackShelf
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.jannes.blackshelf
+        PRODUCT_NAME: BlackShelf
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ENABLE_PREVIEWS: YES
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: BlackShelf/Info.plist
+schemes:
+  BlackShelf:
+    build:
+      targets:
+        BlackShelf: all
+    run:
+      config: Debug
+    archive:
+      config: Release
